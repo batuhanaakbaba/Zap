@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import SystemConfiguration
 
 extension UIColor {
     
@@ -97,4 +98,59 @@ extension UITextField{
 
 
 
+
+func isInternetAvailable() -> Bool {
+    var zeroAddress = sockaddr_in()
+    zeroAddress.sin_len = UInt8(MemoryLayout.size(ofValue: zeroAddress))
+    zeroAddress.sin_family = sa_family_t(AF_INET)
+
+    guard let defaultRouteReachability = withUnsafePointer(to: &zeroAddress, {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            SCNetworkReachabilityCreateWithAddress(nil, $0)
+        }
+    }) else {
+        return false
+    }
+
+    var flags: SCNetworkReachabilityFlags = []
+    if !SCNetworkReachabilityGetFlags(defaultRouteReachability, &flags) {
+        return false
+    }
+
+    let isReachable = flags.contains(.reachable)
+    let needsConnection = flags.contains(.connectionRequired)
+
+    return (isReachable && !needsConnection)
+}
+
+
+
+class InternetConnectionView: UIView {
+    let messageLabel: UILabel = {
+        let label = UILabel()
+        label.text = "Please check your internet connection"
+        label.textColor = .white
+        label.font = UIFont(name: "MavenPro-Medium", size: 18)
+        label.textAlignment = .center
+        return label
+    }()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = UIColor(red: 189/255, green: 255/255, blue: 0, alpha: 1.0)
+
+        addSubview(messageLabel)
+
+        // Özel constraints ekleyin
+        messageLabel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            messageLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+            messageLabel.centerYAnchor.constraint(equalTo: centerYAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
 

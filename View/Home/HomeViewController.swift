@@ -6,6 +6,10 @@
 //
 
 import UIKit
+import FirebaseDatabase
+import SnapKit
+import CoreData
+
 
 final class HomeViewController: UIViewController {
 
@@ -22,18 +26,35 @@ final class HomeViewController: UIViewController {
     @IBOutlet weak var menuBackgroundAlphaView: UIView!
     @IBOutlet weak var menuView: UIView!
     @IBOutlet weak var leadingMenuConstraint: NSLayoutConstraint!
+    let activity: UIActivityIndicatorView = {
+        let act = UIActivityIndicatorView()
+        act.style = .large
+        return act
+    }()
 
-    var selectedCategories: [String] = []
-    let categories: [String] = ["News","Entertainment","Sport","Memes","Beauty","ASMR","Technology","Fashion","Startup","Business","Finance","Real Estate","Cars","Gaming","Science","Cars","Christianity","Food","Animals","Oddly Satisfying","Places","Music","Architecture","Travel","DIY","Art","Engineering"
-    ,"Funny","Interesting","️College","Cringe","Celebrities","Personel Growth","Shopping","ASMR"]
-    let categoriesImage: [String] = ["📰","🎪","🏈","💩","💅","💆‍♀️","💻","🦄","👠","💸","🏢","💸","🏡","🚗","🕹","🧪","🚗","✝️","🍕","🐶","🫠","📍","🎸","🏰","🏖️","🛠️","🎨","⚙️","🤣️","🤯","🎓","🫣","🤩","🪞","🛍️","💆‍♀️"]
+    @IBOutlet weak var firstView: UIView!
+    var selectedCategories: [Category] = []
+    var noCategoriesName = [String]()
+    var noCategoriesImage = [String]()
+    var categories: [Category] = []
+    private let cache = NSCache<NSString, NSArray>()
+
     
     private var isSettingsMenuShown: Bool = false
     private var beginPoint: CGFloat = 0.0
     private var difference: CGFloat = 0.0
-    
+  
+   
+
     override func viewDidLoad() {
         super.viewDidLoad()
+    
+        if InternetManager.shared.isInternetActive() {
+            getData()
+        } else {
+            getCoreData()
+        }
+
         menuBackgroundAlphaView.isHidden = true
         allViewsGetShadow()
         collectionView.delegate = self
@@ -42,6 +63,13 @@ final class HomeViewController: UIViewController {
         collectionView.layer.zPosition = 2
         view.bringSubviewToFront(watchButton)
         updateWatchButtonVisibility()
+        view.addSubview(activity)
+        activity.snp.makeConstraints { make in
+            make.bottom.equalToSuperview().offset(-300)
+            make.centerX.equalToSuperview()
+        }
+      
+
         navigationController?.navigationBar.backgroundColor = UIColor(red: 17/255, green: 17/255, blue: 17/255, alpha: 1.0)
     }
     
@@ -50,27 +78,20 @@ final class HomeViewController: UIViewController {
         allViewGradientLayer()
     }
 
+
     func position(for bar: UIBarPositioning) -> UIBarPosition {
       return .topAttached
     }
     
 
     @IBAction func watchButtonDidTapped(_ sender: Any) {
-//        let userDefaults = UserDefaults.standard
-//
-//          if userDefaults.bool(forKey: "hasLaunchedBefore") {
-//              let storyboard = UIStoryboard(name: "Main", bundle: nil)
-//              let feedVC = storyboard.instantiateViewController(withIdentifier: "FeedViewController") as! FeedViewController
-//              self.navigationController?.pushViewController(feedVC, animated: true)
-//          } else {
 
-              let storyboard = UIStoryboard(name: "Main", bundle: nil)
-              let feedVC = storyboard.instantiateViewController(withIdentifier: "IntroductionViewController") as! IntroductionViewController
-              self.navigationController?.pushViewController(feedVC, animated: true)
-//
-//              userDefaults.set(true, forKey: "hasLaunchedBefore")
-//              userDefaults.synchronize()
-//          }
+        let storyboard = UIStoryboard(name: "Main", bundle: nil)
+        let feedVC = storyboard.instantiateViewController(withIdentifier: "FeedViewController") as! FeedViewController
+       
+            feedVC.selectedCategories = selectedCategories
+            self.navigationController?.pushViewController(feedVC, animated: true)
+
     }
     @IBAction func menuButtonDidTapped(_ sender: Any) {
    
@@ -98,11 +119,8 @@ final class HomeViewController: UIViewController {
     private func updateWatchButtonVisibility() {
         watchButton.isHidden = selectedCategories.isEmpty
     }
-    private func printSelectedCategories() {
-        for category in selectedCategories {
-            print(category)
-        }
-    }
+    
+
     
     @IBAction func moodWatchDidTapped(_ sender: Any) {
         let storyboard = UIStoryboard(name: "Main", bundle: nil)
@@ -168,41 +186,143 @@ extension HomeViewController {
         watchButton.layer.borderColor = UIColor(red: 0, green: 0, blue: 0, alpha: 1.0).cgColor
         watchButton.layer.borderWidth = 1.0
     }
+
+    private func getData() {
+        DispatchQueue.main.async {
+            self.activity.startAnimating()
+        }
+        
+
+        if let cachedData = cache.object(forKey: "categories") as? [Category] {
+            self.categories = cachedData
+            self.collectionView.reloadData()
+            return
+        }
+
+        let databaseReference = Database.database().reference().child("Category")
+
+        let startValue = 0
+        let endValue = 34
+
+        let query = databaseReference.queryOrdered(byChild: "order")
+                                       .queryStarting(atValue: startValue)
+                                       .queryEnding(atValue: endValue)
+
+        query.observeSingleEvent(of:.value) { [weak self] (snapshot, _) in
+
+            guard let self = self else { return }
+
+            if let snapshotValue = snapshot.value as? [String: Any] {
+                let categoryArray = snapshotValue.values.compactMap { (value: Any) -> Category? in
+                    guard let categoryData = value as? [String: Any],
+                          let _ = categoryData["categoryName"] as? String,
+                          let _ = categoryData["categoryImage"] as? String,
+                          let _ = categoryData["categoryId"] as? String else {
+                        return nil
+                    }
+                    return Category(dictionary: categoryData)
+
+                }
+                let sortedCategories = categoryArray.sorted { $0.order < $1.order }
+                self.activity.stopAnimating()
+                self.cache.setObject(sortedCategories as NSArray, forKey: "categories")
+                self.categories = sortedCategories
+                self.collectionView.reloadData()
+            }
+        }
+
+    }
+
+    private func getCoreData() {
+        let appDelegate = UIApplication.shared.delegate as! AppDelegate
+        let context = appDelegate.persistentContainer.viewContext
+        
+        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "CategoryDM")
+        fetchRequest.returnsObjectsAsFaults = false
+        
+        do {
+            let results = try context.fetch(fetchRequest)
+            
+            for result in results as! [NSManagedObject] {
+                
+               if let name = result.value(forKey: "categoryName") as? String {
+                   self.noCategoriesName.append(name)
+                }
+                
+                if let image = result.value(forKey: "categoryImage") as? String {
+                    self.noCategoriesImage.append(image)
+                }
+                
+                self.collectionView.reloadData()
+            }
+        } catch {
+            
+        }
+    }
+
     
 }
 
 extension HomeViewController: UICollectionViewDelegate,UICollectionViewDataSource,UICollectionViewDelegateFlowLayout {
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        return categories.count
+
+        if InternetManager.shared.isInternetActive() {
+            return categories.count
+        } else {
+            return noCategoriesName.count
+        }
+        
     }
     
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         var cell = UICollectionViewCell()
         if let countryCell = collectionView.dequeueReusableCell(withReuseIdentifier: "categoryCell", for: indexPath) as? CategoryCollectionViewCell {
-            countryCell.configure(with: categories[indexPath.row], categoryImageName: categoriesImage[indexPath.row])
+ 
+            
+            if InternetManager.shared.isInternetActive() {
+               
+                let category = categories[indexPath.row]
+                countryCell.configure(with: category.categoryName, categoryImageName: category.categoryImage)
+                countryCell.category = category
+            } else {
+                
+                let categoryName = noCategoriesName[indexPath.row]
+                let categoryImage = noCategoriesImage[indexPath.row]
+                countryCell.configure(with: categoryName, categoryImageName: categoryImage)
+            }
+
             cell = countryCell
         }
         return cell
     }
-    
+
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        if let cell = collectionView.cellForItem(at: indexPath) as? CategoryCollectionViewCell {
-            if cell.isSelectedCategory {
-                cell.isSelectedCategory = false
-                if let index = selectedCategories.firstIndex(of: categories[indexPath.row]) {
-                    selectedCategories.remove(at: index)
+        if InternetManager.shared.isInternetActive() {
+            
+            if let cell = collectionView.cellForItem(at: indexPath) as? CategoryCollectionViewCell {
+                if cell.isSelectedCategory {
+                    cell.isSelectedCategory = false
+                    if let index = selectedCategories.firstIndex(of: categories[indexPath.row]) {
+                        selectedCategories.remove(at: index)
+                    }
+                } else {
+                    cell.isSelectedCategory = true
+                    selectedCategories.append(categories[indexPath.row])
                 }
-            } else {
-                cell.isSelectedCategory = true
-                selectedCategories.append(categories[indexPath.row])
             }
+            updateWatchButtonVisibility()
+        } else {
+            let alert = UIAlertController(title: "Error", message: "Please check your internet connection", preferredStyle: .alert)
+            let okAction = UIAlertAction(title: "OK", style: .default, handler: nil)
+            alert.addAction(okAction)
+            present(alert, animated: true, completion: nil)
         }
-        updateWatchButtonVisibility()
-        printSelectedCategories()
+
+       
     }
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
         let size = collectionView.frame.size
-        return CGSize(width: size.width / 3 - 9 , height: size.height / 10 )
+        return CGSize(width: size.width / 3 - 9 , height: size.width / 4 )
     }
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, minimumLineSpacingForSectionAt section: Int) -> CGFloat {
         return 9
@@ -238,3 +358,23 @@ extension HomeViewController {
     }
   
 }
+
+let categories: [String] = ["News","Entertainment","Sport","Memes","Beauty","ASMR","Technology","Fashion","Startup","Business","Finance","Real Estate","Cars","Gaming","Science","Cars","Christianity","Food","Animals","Oddly Satisfying","Places","Music","Architecture","Travel","DIY","Art","Engineering","Funny","Interesting","️College","Cringe","Celebrities","Personel Growth","Shopping","ASMR"]
+let categoriesImage: [String] = ["📰","🎪","🏈","💩","💅","💆‍♀️","💻","🦄","👠","💸","🏢","💸","🏡","🚗","🕹","🧪","🚗","✝️","🍕","🐶","🫠","📍","🎸","🏰","🏖️","🛠️","🎨","⚙️","🤣️","🤯","🎓","🫣","🤩","🪞","🛍️","💆‍♀️"]
+
+//        let userDefaults = UserDefaults.standard
+//
+//          if userDefaults.bool(forKey: "hasLaunchedBefore") {
+//              let storyboard = UIStoryboard(name: "Main", bundle: nil)
+//              let feedVC = storyboard.instantiateViewController(withIdentifier: "FeedViewController") as! FeedViewController
+//              self.navigationController?.pushViewController(feedVC, animated: true)
+//          } else {
+//
+//              let storyboard = UIStoryboard(name: "Main", bundle: nil)
+//              let feedVC = storyboard.instantiateViewController(withIdentifier: "IntroductionViewController") as! IntroductionViewController
+//
+//              self.navigationController?.pushViewController(feedVC, animated: true)
+//
+//              userDefaults.set(true, forKey: "hasLaunchedBefore")
+//              userDefaults.synchronize()
+//          }

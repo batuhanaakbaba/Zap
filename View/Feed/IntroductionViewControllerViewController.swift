@@ -43,7 +43,7 @@ extension IntroductionViewController: UICollectionViewDelegate,UICollectionViewD
             cell = feedCell
             feedCell.configure(with: introductions[indexPath.row], description: descriptions[indexPath.row], color: colors[indexPath.row],tintColor: tintColors[indexPath.row])
             feedCell.animationCell(indexPath: indexPath)
-//
+            
 //            if indexPath.row == introductions.count - 1 {
 //                feedCell.transitionButton.isHidden = false
 //                feedCell.onTransitionButtonTapped = { [weak self] in
@@ -62,6 +62,7 @@ extension IntroductionViewController: UICollectionViewDelegate,UICollectionViewD
 //                feedCell.transitionButton.isHidden = true
 //                feedCell.onTransitionButtonTapped = nil
 //            }
+            
         }
         return cell
     }

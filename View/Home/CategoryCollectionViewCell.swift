@@ -13,7 +13,12 @@ class CategoryCollectionViewCell: UICollectionViewCell {
     @IBOutlet weak var categoryView: UIView!
     @IBOutlet weak var categoryImage: UILabel!
     
-    
+    var category: Category? {
+        didSet {
+            configure(with: category!.categoryName, categoryImageName: category!.categoryImage)
+        }
+    }
+
     var isSelectedCategory: Bool = false {
         didSet {
             categoryView.backgroundColor = isSelectedCategory ? .white : UIColor(red: 30/255, green: 30/255, blue: 30/255, alpha: 1.0)

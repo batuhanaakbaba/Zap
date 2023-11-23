@@ -12,7 +12,6 @@ import AVKit
 
 class FeedCollectionViewCell: UICollectionViewCell {
 
-
     @IBOutlet weak var creditButton: UIButton!
     @IBOutlet weak var socialMediaImage: UIImageView!
     @IBOutlet weak var descriptionLabel: UILabel!
@@ -54,15 +53,27 @@ class FeedCollectionViewCell: UICollectionViewCell {
         label.text = " / 00:40"
         return label
     }()
+    
     private var isLikeButtonSelected = false
     private var isPlayPauseButtonSelected = false
     private var animationView: LottieAnimationView?
     
-    private var player: AVPlayer? = nil
-    private var playerLayer: AVPlayerLayer? = nil
+    var player: AVPlayer? = nil
+    var playerLayer: AVPlayerLayer? = nil
     
     private var timeObserver: Any? = nil
     private var isThumbSeek: Bool = false
+    
+    var isFullyVisible: Bool {
+        guard let superview = superview as? UICollectionView else {
+            return false
+        }
+        let visibleRect = superview.bounds
+        return visibleRect.contains(frame)
+    }
+    private var playerItem: AVPlayerItem?
+    var videoIdentifier: String?
+
     override func awakeFromNib() {
         super.awakeFromNib()
         creditButton.contentHorizontalAlignment = .left
@@ -75,27 +86,111 @@ class FeedCollectionViewCell: UICollectionViewCell {
         likeButtonActions()
         playPauseActions()
         oneClickAction()
-  
     }
+    
     override func layoutSubviews() {
         super.layoutSubviews()
         playerLayer?.frame = videoPlayerView.bounds
     }
-    func videoPlayer(videoUrl: String) {
-        guard let url = URL(string: videoUrl) else {return}
-        
-        if self.player == nil {
-            self.player = AVPlayer(url: url)
-            self.playerLayer = AVPlayerLayer(player: self.player)
-            self.playerLayer?.videoGravity = .resizeAspectFill
-            self.playerLayer?.frame = self.videoPlayerView.bounds
-            if let playerLayer = self.playerLayer {
-                self.videoPlayerView.layer.addSublayer(playerLayer)
-            }
-            self.player?.play()
-        }
-        self.setObserverToPlayer()
+    
+    private func setupPlayerLoop() {
+        player?.actionAtItemEnd = .none
+        NotificationCenter.default.addObserver(self, selector: #selector(playerDidFinishPlaying), name: .AVPlayerItemDidPlayToEndTime, object: player?.currentItem)
     }
+
+    @objc private func playerDidFinishPlaying() {
+        player?.seek(to: CMTime.zero)
+        player?.play()
+    }
+    
+    func playVideoIfNeeded() {
+        if isFullyVisible {
+            player?.play()
+        }
+    }
+    func reset() {
+        // Reset the cell state, stop video playback, clear labels, etc.
+        self.player?.pause()
+        player?.seek(to: CMTime.zero)
+        self.player = nil
+        self.playerLayer?.removeFromSuperlayer()
+        self.playerLayer = nil
+        // Additional reset logic if needed
+    }
+    func pauseVideo() {
+        player?.pause()
+    }
+    func updatePlayPauseButton() {
+        let imageName = player?.timeControlStatus == .playing ? "play-icon" : "pause-icon"
+        buttonsTintColor(imageName: imageName, button: playPauseButton, tintColor: .white)
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        reset()
+        playerLayer?.removeFromSuperlayer()
+        player?.pause()
+        playerLayer = nil
+        player = nil
+    }
+    func videoPlayer(videoUrl: String, identifier: String) {
+        // Eğer bu hücre zaten başka bir videoyu oynatıyorsa, durdur.
+        if let currentVideoIdentifier = self.videoIdentifier, currentVideoIdentifier != identifier {
+            self.player?.pause()
+            self.playerLayer?.removeFromSuperlayer()
+            self.playerLayer = nil
+            self.player = nil
+        }
+
+        // Video kimliğini ayarla
+        self.videoIdentifier = identifier
+
+        // Eğer bu hücre zaten oynatılıyorsa, başka bir şey yapmamıza gerek yok.
+        if self.player?.timeControlStatus == .playing {
+            return
+        }
+
+        // Diğer video oynatma kodları
+        guard let url = URL(string: videoUrl) else { return }
+        self.player = AVPlayer(url: url)
+        self.playerLayer = AVPlayerLayer(player: self.player)
+        self.playerLayer?.videoGravity = .resizeAspectFill
+        self.playerLayer?.frame = self.videoPlayerView.bounds
+        if let playerLayer = self.playerLayer {
+            self.videoPlayerView.layer.addSublayer(playerLayer)
+        }
+        self.player?.play()
+        // ...
+    }
+
+//    func videoPlayer(videoUrl: String) {
+//
+//        guard let url = URL(string: videoUrl) else {return}
+//
+//        if self.player == nil {
+//            self.player = AVPlayer(url: url)
+//            self.playerLayer = AVPlayerLayer(player: self.player)
+//            self.playerLayer?.videoGravity = .resizeAspectFill
+//            self.playerLayer?.frame = self.videoPlayerView.bounds
+//            if let playerLayer = self.playerLayer {
+//                self.videoPlayerView.layer.addSublayer(playerLayer)
+//            }
+//            self.player?.play()
+////            self.player?.automaticallyWaitsToMinimizeStalling = true
+//
+//        }
+//        self.setupPlayerLoop()
+//        self.setObserverToPlayer()
+//
+//    }
+//    
+
+    func configure(with video: Video) {
+        reset()
+        descriptionLabel.text = video.description
+        socialMediaImage.image = UIImage(named: video.socialMedia!)
+    }
+    
     private func buttonsTintColor(imageName: String, button: UIButton, tintColor: UIColor) {
         let image = UIImage(named: imageName)!
         let tintedImage = image.withTintColor(tintColor, renderingMode: .alwaysOriginal)
@@ -114,6 +209,7 @@ class FeedCollectionViewCell: UICollectionViewCell {
         addGestureRecognizer(doubleTapGestureRecognizer)
         likeButton.addTarget(self, action: #selector(handleLikeButtonTapped), for: .touchUpInside)
     }
+    
     @objc private func handleLikeButtonTapped() {
         isLikeButtonSelected.toggle()
         let imageName = isLikeButtonSelected ? "red-heart-image" : "heart-image"
@@ -165,13 +261,11 @@ class FeedCollectionViewCell: UICollectionViewCell {
  
     }
 
-
- 
     private func playPauseActions() {
         playPauseButton.backgroundColor = UIColor.black.withAlphaComponent(0.6)
         playPauseButton.addTarget(self, action: #selector(playPauseButtonDidTapped), for: .touchUpInside)
-
     }
+    
     private func setupUI() {
         contentView.addSubview(currentDuration)
         currentDuration.snp.makeConstraints { make in
@@ -184,12 +278,14 @@ class FeedCollectionViewCell: UICollectionViewCell {
             make.leading.equalTo(currentDuration.snp.trailing).offset(2)
             make.centerY.equalTo(currentDuration)
         }
+        
         contentView.addSubview(progressBar)
         progressBar.snp.makeConstraints { make in
             make.top.equalTo(currentDuration.snp.bottom).offset(8)
             make.leading.equalToSuperview().offset(19)
             make.trailing.equalToSuperview().offset(-19)
         }
+        
         containerView.frame = CGRect(x: 0, y: 0, width: 393, height: 188)
         let layer0 = CAGradientLayer()
         layer0.colors = [
@@ -201,9 +297,9 @@ class FeedCollectionViewCell: UICollectionViewCell {
         layer0.endPoint = CGPoint(x: 0.75, y: 0.5)
         layer0.transform = CATransform3DMakeAffineTransform(CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: 0, ty: 1))
         layer0.bounds = containerView.bounds.insetBy(dx: -containerView.bounds.size.width, dy: -containerView.bounds.size.height)
-        layer0.position = containerView.center
         containerView.layer.addSublayer(layer0)
-        topContainerView.frame = CGRect(x: 0, y: 0, width: 393, height: 188)
+        layer0.position = containerView.center
+//        topContainerView.frame = CGRect(x: 0, y: 0, width: 393, height: 188)
         let layer1 = CAGradientLayer()
         layer1.colors = [
         UIColor(red: 0, green: 0, blue: 0, alpha: 0.19).cgColor,
@@ -216,9 +312,8 @@ class FeedCollectionViewCell: UICollectionViewCell {
         layer1.bounds = topContainerView.bounds.insetBy(dx: -topContainerView.bounds.size.width, dy: -topContainerView.bounds.size.height)
         topContainerView.layer.addSublayer(layer1)
         layer1.position = topContainerView.center
-
-      
     }
+    
     private func statusOfInitialOutlets() {
         buttonsStackView.isHidden = false
         totalDuration.isHidden = true
@@ -238,9 +333,7 @@ class FeedCollectionViewCell: UICollectionViewCell {
 
     @objc private func playPauseButtonDidTapped() {
         isPlayPauseButtonSelected.toggle()
-//        let imageName = isPlayPauseButtonSelected ? "play-icon" : "pause-icon"
-//        buttonsTintColor(imageName: imageName, button: playPauseButton, tintColor: .white)
-        
+
         if self.player?.timeControlStatus == .playing {
             buttonsTintColor(imageName: "play-icon", button: playPauseButton, tintColor: .white)
             self.player?.pause()
@@ -257,6 +350,7 @@ class FeedCollectionViewCell: UICollectionViewCell {
             self.updatePlayerTime()
         })
     }
+    
     private func updatePlayerTime() {
         guard let currentTime = self.player?.currentTime() else {return}
         guard let duration = self.player?.currentItem?.duration else {return}
@@ -269,7 +363,11 @@ class FeedCollectionViewCell: UICollectionViewCell {
         self.currentDuration.text = formatTime(seconds: currentTimeInSecond)
         self.totalDuration.text = " / \(formatTime(seconds: durationTimeInSecond))"
     }
+    
     private func formatTime(seconds: TimeInterval) -> String {
+        guard !seconds.isNaN, !seconds.isInfinite else {
+            return "00:00"
+        }
         let hours = Int(seconds) / 3600
         let minutes = (Int(seconds) / 60) % 60
         let seconds = Int(seconds) % 60
@@ -279,7 +377,9 @@ class FeedCollectionViewCell: UICollectionViewCell {
             return String(format: "%02d:%02d", minutes, seconds)
         }
     }
+
     @objc func onTapToSlider() {
+        
         self.isThumbSeek = true
         guard let duration = self.player?.currentItem?.duration else {return}
         let value = Float64(self.progressBar.value) * CMTimeGetSeconds(duration)
@@ -292,4 +392,5 @@ class FeedCollectionViewCell: UICollectionViewCell {
             })
         }
     }
+    
 }

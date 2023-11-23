@@ -29,7 +29,7 @@ class IntroductionCollectionViewCell: UICollectionViewCell {
 
     func animationCell(indexPath: IndexPath) {
         if indexPath.row == 0 {
-            // Eğer bu ilk hücre ise, Lottie animasyonunu başlat
+           
             let animation = LottieAnimation.named("Animation - 1698999264201")
             animationView = LottieAnimationView(animation: animation)
             animationView?.frame = self.contentView.bounds
@@ -39,13 +39,12 @@ class IntroductionCollectionViewCell: UICollectionViewCell {
             self.contentView.addSubview(animationView!)
             animationView?.play()
 
-            // Animasyonu 2 saniye sonra kaldır
             Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { _ in
                 self.animationView?.removeFromSuperview()
                 self.animationView = nil
             }
+            
         } else {
-            // Diğer hücrelerde animasyonu kaldır
             animationView?.removeFromSuperview()
             animationView = nil
         }
